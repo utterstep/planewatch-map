@@ -85,7 +85,8 @@ fn get_image() -> Bytes {
     camera_device.queue_request(reqs.pop().unwrap()).unwrap();
 
     println!("Waiting for camera request execution");
-    rx.recv_timeout(Duration::from_secs(10))
+    let req = rx
+        .recv_timeout(Duration::from_secs(10))
         .expect("Camera request failed");
 
     println!("Camera request {:?} completed!", req);
