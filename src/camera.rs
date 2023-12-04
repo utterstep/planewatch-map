@@ -75,9 +75,12 @@ async fn current_view() -> impl IntoResponse {
     cam.queue_request(reqs.pop().unwrap()).unwrap();
 
     println!("Waiting for camera request execution");
-    let req = rx
-        .recv_timeout(Duration::from_secs(10))
-        .expect("Camera request failed");
+    let req = spawn_blocking(|| {
+        rx.recv_timeout(Duration::from_secs(10))
+            .expect("Camera request failed")
+    })
+    .await
+    .expect("Failed to wait for camera response");
 
     println!("Camera request {:?} completed!", req);
     println!("Metadata: {:#?}", req.metadata());
