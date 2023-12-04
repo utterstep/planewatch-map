@@ -36,7 +36,7 @@ pub async fn current_view() -> impl IntoResponse {
     match config.validate() {
         CameraConfigurationStatus::Valid => println!("Camera configuration valid!"),
         CameraConfigurationStatus::Adjusted => {
-            println!("Camera configuration was adjusted: {:#?}", configs)
+            println!("Camera configuration was adjusted: {:#?}", config)
         }
         CameraConfigurationStatus::Invalid => panic!("Error validating camera configuration"),
     }
