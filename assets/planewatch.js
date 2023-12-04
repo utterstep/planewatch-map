@@ -90,3 +90,16 @@ ws.addEventListener('message', (event) => {
         marker.remove();
     }, 1000);
 });
+
+const cameraOverlay = document.getElementById("camView");
+const cameraClose = document.getElementById("camViewClose");
+
+window.addEventListener("keypress", (event) => {
+    if (event.key === "c") {
+        camView.showModal();
+    }
+}, false);
+
+cameraClose.addEventListener("click", () => {
+    camView.close();
+}, false);

@@ -21,13 +21,15 @@ use smol_str::SmolStr;
 use tokio::sync::watch::{self, Receiver, Sender};
 use tower_http::{compression::CompressionLayer, services::ServeDir};
 
+mod camera;
+
 #[derive(Clone)]
 pub struct AppState {
     points_seen: Arc<Mutex<VecDeque<(SmolStr, (f32, f32))>>>,
     sender: Arc<Sender<(SmolStr, (f32, f32))>>,
 }
 
-const POINTS_HISTORY_LIMIT: usize = 40000;
+const POINTS_HISTORY_LIMIT: usize = 80000;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
