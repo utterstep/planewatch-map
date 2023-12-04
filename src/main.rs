@@ -93,7 +93,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let address = "[::]:12345".parse().expect("failed to parse address");
+    let address = "[::]:12345"
+        .parse::<SocketAddr>()
+        .expect("failed to parse address");
     let lst = TcpListener::bind(address)
         .await
         .expect("failed to bind address");
