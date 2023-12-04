@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use axum::{
-    body::Bytes,
+    body::{Body, Bytes},
     response::{IntoResponse, Response},
 };
 use libcamera::{
@@ -110,9 +110,11 @@ pub async fn current_view() -> impl IntoResponse {
         .get(0)
         .unwrap()
         .bytes_used as usize;
+    let bytes = Bytes::copy_from_slice(&jpeg_data[..jpeg_len]);
+    let body = Body::from(bytes);
 
     Response::builder()
         .header("Content-Type", "image/jpeg")
-        .body(Bytes::copy_from_slice(&jpeg_data[..jpeg_len]))
+        .body(body)
         .expect("Failed to build response")
 }
