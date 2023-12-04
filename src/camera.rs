@@ -1,14 +1,18 @@
 use axum::response::{IntoResponse, Response};
 use libcamera::{
-    camera_manager::CameraManager, framebuffer_allocator::FrameBufferAllocator,
-    framebuffer_map::MemoryMappedFrameBuffer, pixel_format::PixelFormat, stream::StreamRole,
+    camera::CameraConfigurationStatus,
+    camera_manager::CameraManager,
+    framebuffer_allocator::{FrameBuffer, FrameBufferAllocator},
+    framebuffer_map::MemoryMappedFrameBuffer,
+    pixel_format::PixelFormat,
+    stream::StreamRole,
 };
 use tokio::task::spawn_blocking;
 
 const PIXEL_FORMAT_MJPEG: PixelFormat =
     PixelFormat::new(u32::from_le_bytes([b'M', b'J', b'P', b'G']), 0);
 
-async fn current_view() -> impl IntoResponse {
+pub async fn current_view() -> impl IntoResponse {
     let camera_manager = CameraManager::new().expect("Failed to create camera manager");
 
     let camera = camera_manager
@@ -65,14 +69,14 @@ async fn current_view() -> impl IntoResponse {
 
     // Completed capture requests are returned as a callback
     let (tx, rx) = std::sync::mpsc::channel();
-    cam.on_request_completed(move |req| {
+    camera_device.on_request_completed(move |req| {
         tx.send(req).unwrap();
     });
 
-    cam.start(None).unwrap();
+    camera_device.start(None).unwrap();
 
     // Multiple requests can be queued at a time, but for this example we just want a single frame.
-    cam.queue_request(reqs.pop().unwrap()).unwrap();
+    camera_device.queue_request(reqs.pop().unwrap()).unwrap();
 
     println!("Waiting for camera request execution");
     let req = spawn_blocking(|| {
