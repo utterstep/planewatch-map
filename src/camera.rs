@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use axum::response::{IntoResponse, Response};
+use axum::{
+    body::Bytes,
+    response::{IntoResponse, Response},
+};
 use libcamera::{
     camera::CameraConfigurationStatus,
     camera_manager::CameraManager,
@@ -110,6 +113,6 @@ pub async fn current_view() -> impl IntoResponse {
 
     Response::builder()
         .header("Content-Type", "image/jpeg")
-        .body(jpeg_data[..jpeg_len].to_vec())
+        .body(Bytes::copy_from_slice(&jpeg_data[..jpeg_len]))
         .expect("Failed to build response")
 }
