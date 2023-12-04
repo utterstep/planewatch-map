@@ -18,7 +18,7 @@ use tokio::task::spawn_blocking;
 const PIXEL_FORMAT_MJPEG: PixelFormat =
     PixelFormat::new(u32::from_le_bytes([b'M', b'J', b'P', b'G']), 0);
 
-pub async fn current_view() -> impl IntoResponse {
+fn get_image() -> Bytes {
     let camera_manager = CameraManager::new().expect("Failed to create camera manager");
 
     let camera = camera_manager
@@ -85,12 +85,8 @@ pub async fn current_view() -> impl IntoResponse {
     camera_device.queue_request(reqs.pop().unwrap()).unwrap();
 
     println!("Waiting for camera request execution");
-    let req = spawn_blocking(|| {
-        rx.recv_timeout(Duration::from_secs(10))
-            .expect("Camera request failed")
-    })
-    .await
-    .expect("Failed to wait for camera response");
+    rx.recv_timeout(Duration::from_secs(10))
+        .expect("Camera request failed");
 
     println!("Camera request {:?} completed!", req);
     println!("Metadata: {:#?}", req.metadata());
@@ -110,7 +106,14 @@ pub async fn current_view() -> impl IntoResponse {
         .get(0)
         .unwrap()
         .bytes_used as usize;
-    let bytes = Bytes::copy_from_slice(&jpeg_data[..jpeg_len]);
+
+    Bytes::copy_from_slice(&jpeg_data[..jpeg_len])
+}
+
+pub async fn current_view() -> impl IntoResponse {
+    let bytes = spawn_blocking(get_image)
+        .await
+        .expect("Failed to spawn blocking task");
     let body = Body::from(bytes);
 
     Response::builder()
