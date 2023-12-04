@@ -20,11 +20,9 @@ const PIXEL_FORMAT_MJPEG: PixelFormat =
 
 fn get_image() -> Bytes {
     let camera_manager = CameraManager::new().expect("Failed to create camera manager");
+    let cameras = camera_manager.cameras();
 
-    let camera = camera_manager
-        .cameras()
-        .get(0)
-        .expect("No cameras available");
+    let camera = cameras.get(0).expect("No cameras available");
 
     let mut camera_device = camera.acquire().expect("Failed to acquire camera");
     let mut config = camera_device
