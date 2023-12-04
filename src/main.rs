@@ -18,7 +18,10 @@ use axum::{
 };
 use csv::ReaderBuilder;
 use smol_str::SmolStr;
-use tokio::sync::watch::{self, Receiver, Sender};
+use tokio::{
+    net::TcpListener,
+    sync::watch::{self, Receiver, Sender},
+};
 use tower_http::{compression::CompressionLayer, services::ServeDir};
 
 mod camera;
@@ -90,9 +93,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    axum::Server::bind(&"[::]:12345".parse().unwrap())
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
-        .await?;
+    let address = "[::]:12345".parse().expect("failed to parse address");
+    let lst = TcpListener::bind(address)
+        .await
+        .expect("failed to bind address");
+
+    axum::serve(lst, app.into_make_service_with_connect_info::<SocketAddr>()).await?;
 
     Ok(())
 }

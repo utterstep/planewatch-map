@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use axum::response::{IntoResponse, Response};
 use libcamera::{
     camera::CameraConfigurationStatus,
     camera_manager::CameraManager,
+    framebuffer::AsFrameBuffer,
     framebuffer_allocator::{FrameBuffer, FrameBufferAllocator},
     framebuffer_map::MemoryMappedFrameBuffer,
     pixel_format::PixelFormat,
@@ -33,7 +36,7 @@ pub async fn current_view() -> impl IntoResponse {
     match config.validate() {
         CameraConfigurationStatus::Valid => println!("Camera configuration valid!"),
         CameraConfigurationStatus::Adjusted => {
-            println!("Camera configuration was adjusted: {:#?}", cfgs)
+            println!("Camera configuration was adjusted: {:#?}", configs)
         }
         CameraConfigurationStatus::Invalid => panic!("Error validating camera configuration"),
     }
@@ -42,7 +45,7 @@ pub async fn current_view() -> impl IntoResponse {
         .configure(&mut config)
         .expect("Unable to configure camera");
 
-    let mut alloc = FrameBufferAllocator::new(&cam);
+    let mut alloc = FrameBufferAllocator::new(&camera_device);
 
     // Allocate frame buffers for the stream
     let stream_config = config.get(0).expect("Failed to get configuration");
@@ -61,7 +64,7 @@ pub async fn current_view() -> impl IntoResponse {
     let mut reqs = buffers
         .into_iter()
         .map(|buf| {
-            let mut req = cam.create_request(None).unwrap();
+            let mut req = camera_device.create_request(None).unwrap();
             req.add_buffer(&stream, buf).unwrap();
             req
         })
