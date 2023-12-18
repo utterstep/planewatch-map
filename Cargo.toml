@@ -7,9 +7,12 @@ edition = "2021"
 
 [dependencies]
 axum = { version = "0.7", features = ["ws"] }
+eyre = "0.6"
 csv = "1"
 smol_str = { version = "0.2", features = ["serde"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5", features = ["fs", "compression-br"] }
 
+drm-fourcc = "2.2"
+image = "0.24"
 libcamera = "0.2"
