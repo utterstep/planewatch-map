@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .fallback_service(ServeDir::new(assets_dir))
         .route("/points_history", get(points_history))
         .route("/ws", get(ws_handler))
-        .route("/camera/current.jpg", get(camera::current_view))
+        .route("/camera/current.:extension", get(camera::current_view))
         .layer(CompressionLayer::new())
         .with_state(state);
 

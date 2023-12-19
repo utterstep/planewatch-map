@@ -2,10 +2,12 @@ use std::{io::Cursor, time::Duration};
 
 use axum::{
     body::{Body, Bytes},
+    extract::{Path, Request},
     response::{IntoResponse, Response},
 };
 use drm_fourcc::DrmFourcc;
 use eyre::{ContextCompat, OptionExt, Report, Result, WrapErr};
+use image::{ImageFormat, RgbImage};
 use libcamera::{
     camera::CameraConfigurationStatus,
     camera_manager::CameraManager,
@@ -20,7 +22,7 @@ use tokio::task::spawn_blocking;
 
 const RGB888: PixelFormat = PixelFormat::new(DrmFourcc::Bgr888 as u32, 0);
 
-fn get_image() -> Result<Bytes> {
+fn get_image() -> Result<RgbImage> {
     let mgr = CameraManager::new().unwrap();
 
     mgr.log_set_level("Camera", LoggingLevel::Error);
@@ -135,18 +137,14 @@ fn get_image() -> Result<Bytes> {
         pixel_data_parsed
     };
 
-    let image = image::RgbImage::from_raw(frame_size.width, frame_size.height, pixel_data)
-        .ok_or_eyre("Failed to parse image")?;
-    let output_format = image::ImageOutputFormat::Jpeg(90);
-
-    let mut buffer = Cursor::new(Vec::new());
-    image.write_to(&mut buffer, output_format).unwrap();
-
-    Ok(Bytes::from(buffer.into_inner()))
+    Ok(
+        RgbImage::from_raw(frame_size.width, frame_size.height, pixel_data)
+            .ok_or_eyre("Failed to parse image")?,
+    )
 }
 
-pub async fn current_view() -> impl IntoResponse {
-    let bytes_res = match spawn_blocking(get_image)
+pub async fn current_view(Path(extension): Path<String>) -> impl IntoResponse {
+    let image_res = match spawn_blocking(get_image)
         .await
         .wrap_err("Failed to spawn blocking task")
     {
@@ -162,23 +160,52 @@ pub async fn current_view() -> impl IntoResponse {
         }
     };
 
-    match bytes_res {
-        Ok(bytes) => {
-            let body = Body::from(bytes);
-
-            Response::builder()
-                .header("Content-Type", "image/jpeg")
-                .body(body)
-                .expect("Failed to build response")
-        }
+    let image = match image_res {
+        Ok(image) => image,
         Err(e) => {
             let body = Body::from(format!("Error: {}", e));
 
-            Response::builder()
+            return Response::builder()
                 .status(500)
                 .header("Content-Type", "text/plain")
                 .body(body)
-                .expect("Failed to build response")
+                .expect("Failed to build response");
         }
-    }
+    };
+
+    let format = match extension.as_str() {
+        "jpg" => ImageFormat::Jpeg,
+        "png" => ImageFormat::Png,
+        "gif" => ImageFormat::Gif,
+        "bmp" => ImageFormat::Bmp,
+        "ico" => ImageFormat::Ico,
+        "tiff" => ImageFormat::Tiff,
+        "webp" => ImageFormat::WebP,
+        "qoi" => ImageFormat::Qoi,
+        _ => ImageFormat::Jpeg,
+    };
+
+    let content_type = match format {
+        ImageFormat::Jpeg => "image/jpeg",
+        ImageFormat::Png => "image/png",
+        ImageFormat::Gif => "image/gif",
+        ImageFormat::Bmp => "image/bmp",
+        ImageFormat::Ico => "image/ico",
+        ImageFormat::Tiff => "image/tiff",
+        ImageFormat::WebP => "image/webp",
+        ImageFormat::Qoi => "image/qoi",
+        _ => "image/jpeg",
+    };
+
+    let mut body = Cursor::new(Vec::new());
+    image
+        .write_to(&mut body, format)
+        .expect("Failed to write image to buffer");
+
+    let body = Body::from(body.into_inner());
+
+    Response::builder()
+        .header("Content-Type", content_type)
+        .body(body)
+        .expect("Failed to build response")
 }
