@@ -1,3 +1,15 @@
+#cam-view {
+    max-width: calc(100vw - 10%);
+}
+
+#cam-view img {
+    max-width: 100%;
+}
+
+#cam-view::backdrop {
+    backdrop-filter: blur(2px);
+}
+
 .w-screen {
     width: 100vw;
 }
@@ -24,6 +36,14 @@
 
 .left-0 {
     left: 0;
+}
+
+.right-0 {
+    right: 0;
+}
+
+.cursor-pointer {
+    cursor: pointer;
 }
 
 body {

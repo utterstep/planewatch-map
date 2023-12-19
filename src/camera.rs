@@ -1,11 +1,11 @@
-use std::time::Duration;
+use std::{io::Cursor, time::Duration};
 
 use axum::{
     body::{Body, Bytes},
     response::{IntoResponse, Response},
 };
 use drm_fourcc::DrmFourcc;
-use eyre::{Result, WrapErr};
+use eyre::{ContextCompat, OptionExt, Report, Result, WrapErr};
 use libcamera::{
     camera::CameraConfigurationStatus,
     camera_manager::CameraManager,
@@ -16,6 +16,7 @@ use libcamera::{
     pixel_format::PixelFormat,
     stream::StreamRole,
 };
+use tokio::task::spawn_blocking;
 
 const RGB888: PixelFormat = PixelFormat::new(DrmFourcc::Bgr888 as u32, 0);
 
@@ -25,7 +26,7 @@ fn get_image() -> Result<Bytes> {
     mgr.log_set_level("Camera", LoggingLevel::Error);
 
     let cameras = mgr.cameras();
-    let cam = cameras.get(0).wrap_err("No camera found");
+    let cam = cameras.get(0).ok_or_eyre("No camera found")?;
 
     println!("ID: {}", cam.id());
 
@@ -37,7 +38,7 @@ fn get_image() -> Result<Bytes> {
 
     config
         .get_mut(0)
-        .wrap_err("No camera config generated")
+        .ok_or_eyre("No camera config generated")?
         .set_pixel_format(RGB888);
 
     match config.validate() {
@@ -50,14 +51,14 @@ fn get_image() -> Result<Bytes> {
         }
     };
 
-    let mut cam = cam.acquire().wrap_err("Unable to acquire camera");
+    let mut cam = cam.acquire().wrap_err("Unable to acquire camera")?;
     cam.configure(&mut config)
-        .wrap_err("Failed to configure active camera");
-    let cfg = config.get(0).wrap_err("No config");
+        .wrap_err("Failed to configure active camera")?;
+    let cfg = config.get(0).ok_or_eyre("No config")?;
 
     let mut alloc = FrameBufferAllocator::new(&cam);
-    let stream = cfg.stream().wrap_err("No camera stream");
-    let buffers = alloc.alloc(&stream).unwrap();
+    let stream = cfg.stream().ok_or_eyre("No camera stream")?;
+    let buffers = alloc.alloc(&stream).wrap_err("Failed to allocate buffer")?;
     println!("Allocated {} buffers", buffers.len());
 
     // Convert FrameBuffer to MemoryMappedFrameBuffer, which allows reading &[u8]
@@ -71,11 +72,15 @@ fn get_image() -> Result<Bytes> {
     let mut reqs = buffers
         .into_iter()
         .map(|buf| {
-            let mut req = cam.create_request(None).unwrap();
-            req.add_buffer(&stream, buf).unwrap();
-            req
+            let mut req = cam
+                .create_request(None)
+                .wrap_err("Failed to create camera request")?;
+            req.add_buffer(&stream, buf)
+                .wrap_err("Can't add buffer to request")?;
+
+            Ok::<_, Report>(req)
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Completed capture requests are returned as a callback
     let (tx, rx) = std::sync::mpsc::channel();
@@ -91,23 +96,24 @@ fn get_image() -> Result<Bytes> {
     println!("Waiting for camera request execution");
     let req = rx
         .recv_timeout(Duration::from_secs(2))
-        .wrap_err("Camera request failed");
+        .wrap_err("Camera request failed")?;
 
     println!("Camera request {:?} completed!", req);
     println!("Metadata: {:#?}", req.metadata());
 
     // Get framebuffer for our stream
-    let framebuffer: &MemoryMappedFrameBuffer<FrameBuffer> = req.buffer(&stream).unwrap();
+    let framebuffer: &MemoryMappedFrameBuffer<FrameBuffer> =
+        req.buffer(&stream).ok_or_eyre("No buffer found")?;
     println!("FrameBuffer metadata: {:#?}", framebuffer.metadata());
 
     let planes = framebuffer.data();
-    let pixel_data = planes.get(0).unwrap();
+    let pixel_data = planes.get(0).ok_or_eyre("No planes in camera response")?;
     let pixel_len = framebuffer
         .metadata()
-        .unwrap()
+        .ok_or_eyre("Got response withoud metadata")?
         .planes()
         .get(0)
-        .unwrap()
+        .ok_or_eyre("No planes in camera response")?
         .bytes_used as usize;
 
     println!("Parsing image");
@@ -130,28 +136,40 @@ fn get_image() -> Result<Bytes> {
     };
 
     let image = image::RgbImage::from_raw(frame_size.width, frame_size.height, pixel_data)
-        .ok_or(eyre::eyre!("Failed to parse image"))?;
+        .ok_or_eyre("Failed to parse image")?;
     let output_format = image::ImageOutputFormat::Jpeg(90);
 
-    let mut buffer = Vec::new();
+    let mut buffer = Cursor::new(Vec::new());
     image.write_to(&mut buffer, output_format).unwrap();
 
-    Ok(Bytes::from(image))
+    Ok(Bytes::from(buffer.into_inner()))
 }
 
 pub async fn current_view() -> impl IntoResponse {
-    let bytes = spawn_blocking(get_image)
+    let bytes_res = match spawn_blocking(get_image)
         .await
-        .wrap_err("Failed to spawn blocking task");
+        .wrap_err("Failed to spawn blocking task")
+    {
+        Ok(bytes_res) => bytes_res,
+        Err(e) => {
+            let body = Body::from(format!("Error: {}", e));
 
-    match bytes {
+            return Response::builder()
+                .status(500)
+                .header("Content-Type", "text/plain")
+                .body(body)
+                .expect("Failed to build response");
+        }
+    };
+
+    match bytes_res {
         Ok(bytes) => {
             let body = Body::from(bytes);
 
             Response::builder()
                 .header("Content-Type", "image/jpeg")
                 .body(body)
-                .wrap_err("Failed to build response")
+                .expect("Failed to build response")
         }
         Err(e) => {
             let body = Body::from(format!("Error: {}", e));
@@ -160,7 +178,7 @@ pub async fn current_view() -> impl IntoResponse {
                 .status(500)
                 .header("Content-Type", "text/plain")
                 .body(body)
-                .wrap_err("Failed to build response")
+                .expect("Failed to build response")
         }
     }
 }

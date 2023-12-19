@@ -91,15 +91,21 @@ ws.addEventListener('message', (event) => {
     }, 1000);
 });
 
-const cameraOverlay = document.getElementById("camView");
-const cameraClose = document.getElementById("camViewClose");
+const cameraOverlay = document.getElementById("cam-view");
+const cameraClose = document.getElementById("cam-view-close");
 
 window.addEventListener("keypress", (event) => {
-    if (event.key === "c") {
-        camView.showModal();
+    if (event.code === "KeyC") {
+        cameraOverlay.showModal();
     }
+    Array.from(cameraOverlay.getElementsByTagName('img')).forEach((img) => {
+        let url = new URL(img.src);
+        url.searchParams.set("t", new Date().getTime());
+
+        img.src = url.toString();
+    });
 }, false);
 
 cameraClose.addEventListener("click", () => {
-    camView.close();
+    cameraOverlay.close();
 }, false);
