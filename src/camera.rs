@@ -1,8 +1,8 @@
 use std::{io::Cursor, time::Duration};
 
 use axum::{
-    body::{Body, Bytes},
-    extract::{Path, Request},
+    body::Body,
+    extract::{Path, State},
     response::{IntoResponse, Response},
 };
 use drm_fourcc::DrmFourcc;
@@ -19,6 +19,10 @@ use libcamera::{
     stream::StreamRole,
 };
 use tokio::task::spawn_blocking;
+
+use crate::cache::ImageCache;
+
+use super::AppState;
 
 const RGB888: PixelFormat = PixelFormat::new(DrmFourcc::Bgr888 as u32, 0);
 
@@ -143,34 +147,54 @@ fn get_image() -> Result<RgbImage> {
     )
 }
 
-pub async fn current_view(Path(extension): Path<String>) -> impl IntoResponse {
-    let image_res = match spawn_blocking(get_image)
-        .await
-        .wrap_err("Failed to spawn blocking task")
-    {
-        Ok(bytes_res) => bytes_res,
-        Err(e) => {
-            let body = Body::from(format!("Error: {}", e));
+pub async fn current_view(
+    State(state): State<AppState>,
+    Path(extension): Path<String>,
+) -> impl IntoResponse {
+    let cache = state.camera_cache.read().await;
+    let cache_actual = cache.as_ref().map(|cache| !cache.stale()).unwrap_or(false);
 
-            return Response::builder()
-                .status(500)
-                .header("Content-Type", "text/plain")
-                .body(body)
-                .expect("Failed to build response");
-        }
-    };
+    let image = if cache_actual {
+        println!("Returning from cache");
 
-    let image = match image_res {
-        Ok(image) => image,
-        Err(e) => {
-            let body = Body::from(format!("Error: {}", e));
+        // SAFETY: known to be not stale => not None
+        cache.as_ref().unwrap().image()
+    } else {
+        drop(cache);
+        let mut write_cache = state.camera_cache.write().await;
 
-            return Response::builder()
-                .status(500)
-                .header("Content-Type", "text/plain")
-                .body(body)
-                .expect("Failed to build response");
-        }
+        let image_res = match spawn_blocking(get_image)
+            .await
+            .wrap_err("Failed to spawn blocking task")
+        {
+            Ok(bytes_res) => bytes_res,
+            Err(e) => {
+                let body = Body::from(format!("Error: {}", e));
+
+                return Response::builder()
+                    .status(500)
+                    .header("Content-Type", "text/plain")
+                    .body(body)
+                    .expect("Failed to build response");
+            }
+        };
+
+        let image = match image_res {
+            Ok(image) => image,
+            Err(e) => {
+                let body = Body::from(format!("Error: {}", e));
+
+                return Response::builder()
+                    .status(500)
+                    .header("Content-Type", "text/plain")
+                    .body(body)
+                    .expect("Failed to build response");
+            }
+        };
+
+        *write_cache = Some(ImageCache::new(image.clone()));
+
+        image
     };
 
     let format = match extension.as_str() {

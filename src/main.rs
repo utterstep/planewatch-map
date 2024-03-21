@@ -20,16 +20,21 @@ use csv::ReaderBuilder;
 use smol_str::SmolStr;
 use tokio::{
     net::TcpListener,
-    sync::watch::{self, Receiver, Sender},
+    sync::{
+        watch::{self, Receiver, Sender},
+        RwLock,
+    },
 };
 use tower_http::{compression::CompressionLayer, services::ServeDir};
 
+mod cache;
 mod camera;
 
 #[derive(Clone)]
 pub struct AppState {
     points_seen: Arc<Mutex<VecDeque<(SmolStr, (f32, f32))>>>,
     sender: Arc<Sender<(SmolStr, (f32, f32))>>,
+    camera_cache: Arc<RwLock<Option<cache::ImageCache>>>,
 }
 
 const POINTS_HISTORY_LIMIT: usize = 80000;
@@ -43,6 +48,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let state = AppState {
         points_seen: Arc::clone(&points_seen),
         sender: Arc::clone(&sender),
+        camera_cache: Arc::new(RwLock::new(None)),
     };
 
     let assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
@@ -54,6 +60,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/camera/current.:extension", get(camera::current_view))
         .layer(CompressionLayer::new())
         .with_state(state);
+
+    // DIRTY: just connect synchronously to fail fast if server isn't running
+    let stream = TcpStream::connect("127.0.0.1:30003").expect("failed to connect to source");
+    drop(stream);
 
     spawn(move || {
         println!("Created background task");
